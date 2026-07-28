@@ -31,7 +31,9 @@ try {
 }
 
 const PORT = Number(process.env.PORT ?? 19950);
-const STORAGE_DIR = path.resolve(process.env.STORAGE_DIR ?? './vault');
+// Seeded from the environment, but changeable at runtime from the extension's
+// settings page so users never have to hand-edit a config file.
+let activeStorageDir = path.resolve(process.env.STORAGE_DIR ?? './vault');
 const MODE = (process.env.STORAGE_MODE ?? 'local').toLowerCase();
 const DEFAULT_WORKERS = Number(process.env.WORKERS ?? 4);
 const ALLOWED_ORIGIN = /^chrome-extension:\/\//;
@@ -65,7 +67,7 @@ const safeSegment = (value, max = 80) =>
 function destinationFor(record) {
   const author = safeSegment(record.author, 48);
   const bucket = record.kind === 'animated' ? 'animated' : record.format;
-  return path.join(STORAGE_DIR, author, bucket);
+  return path.join(activeStorageDir, author, bucket);
 }
 
 function filenameFor(record) {
@@ -126,7 +128,7 @@ async function fetchToDisk(record) {
 }
 
 async function appendManifest(author, records) {
-  const dir = path.join(STORAGE_DIR, safeSegment(author, 48), '_manifest');
+  const dir = path.join(activeStorageDir, safeSegment(author, 48), '_manifest');
   await fsp.mkdir(dir, { recursive: true });
   const lines = records.map((r) => JSON.stringify({ ...r, receivedAt: Date.now() })).join('\n');
   await fsp.appendFile(path.join(dir, 'records.jsonl'), `${lines}\n`, 'utf8');
@@ -225,10 +227,46 @@ app.get('/health', async (_req, res) => {
       return res.status(503).json(payload);
     }
   } else {
-    await fsp.mkdir(STORAGE_DIR, { recursive: true }).catch(() => {});
-    payload.storageDir = STORAGE_DIR;
+    await fsp.mkdir(activeStorageDir, { recursive: true }).catch(() => {});
+    payload.storageDir = activeStorageDir;
   }
   res.json(payload);
+});
+
+/**
+ * Storage folder, readable and settable from the extension's settings page so
+ * users are not forced to hand-edit .env. Local mode only — in remote mode the
+ * destination is owned by the host configuration.
+ */
+app.get('/api/config', (_req, res) => {
+  res.json({
+    ok: true,
+    mode: isRemote() ? 'remote' : 'local',
+    storageDir: isRemote() ? `${REMOTE_HOST}:${REMOTE_DIR}` : activeStorageDir,
+    editable: !isRemote()
+  });
+});
+
+app.post('/api/config', async (req, res) => {
+  if (isRemote()) {
+    return res.status(409).json({
+      error: 'This bridge is in remote mode; set REMOTE_DIR in its .env instead.'
+    });
+  }
+  const requested = String(req.body?.storageDir ?? '').trim();
+  if (!requested) return res.status(400).json({ error: 'storageDir is required' });
+
+  const resolved = path.resolve(requested);
+  try {
+    await fsp.mkdir(resolved, { recursive: true });
+    await fsp.access(resolved, fs.constants.W_OK);
+  } catch (err) {
+    return res.status(400).json({ error: `Cannot write to "${resolved}": ${err.code ?? err.message}` });
+  }
+
+  activeStorageDir = resolved;
+  console.log(`Storage folder changed to ${resolved}`);
+  res.json({ ok: true, storageDir: resolved });
 });
 
 app.post('/api/records', async (req, res) => {
@@ -330,7 +368,7 @@ app.get('/api/status', (req, res) => {
 });
 
 app.listen(PORT, '127.0.0.1', async () => {
-  await fsp.mkdir(STORAGE_DIR, { recursive: true }).catch(() => {});
+  await fsp.mkdir(activeStorageDir, { recursive: true }).catch(() => {});
   console.log(`Meshy Asset Vault bridge  ·  http://localhost:${PORT}`);
-  console.log(`Storage (${MODE}): ${STORAGE_DIR}`);
+  console.log(`Storage (${MODE}): ${isRemote() ? `${REMOTE_HOST}:${REMOTE_DIR}` : activeStorageDir}`);
 });

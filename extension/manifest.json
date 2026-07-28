@@ -8,6 +8,7 @@
     "storage",
     "alarms",
     "tabs",
+    "downloads",
     "webRequest"
   ],
   "host_permissions": [

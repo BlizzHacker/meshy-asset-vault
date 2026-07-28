@@ -28,36 +28,54 @@ Extension (your browser session)          Bridge (your machine)
 - **Local only** — files go straight from Meshy's CDN to your disk. There is no
   server component and no telemetry.
 
+## Where files go
+
+Two destinations, chosen in **Settings**:
+
+| | Browser downloads *(default)* | Local bridge |
+| --- | --- | --- |
+| Setup | None | Node.js server you run |
+| Saves to | Your Downloads folder | Any folder, drive, or network share |
+| Works on | Any Chrome device, including Chromebooks | Machines where you can run Node |
+| Best for | Most people | Very large archives, NAS, external drives |
+
+Browser mode organises files as
+`Downloads/<your folder>/<creator>/<format>/` and skips anything it has already
+fetched, so re-running only picks up what is new.
+
 ## Requirements
 
 - Chrome, Brave, Edge, or another Chromium browser (v116+)
-- [Node.js](https://nodejs.org) 18 or newer
 - A Meshy account you are signed into
+- *(Bridge mode only)* [Node.js](https://nodejs.org) 18 or newer
 
 ## Install
-
-### 1. Start the bridge
-
-```bash
-cd bridge
-npm install
-cp .env.example .env      # then edit STORAGE_DIR to taste
-npm start
-```
-
-Leave it running. It listens on `http://localhost:19950` and only accepts
-connections from your own machine.
-
-### 2. Load the extension
 
 1. Open `chrome://extensions`
 2. Turn on **Developer mode**
 3. **Load unpacked** → select the `extension/` folder
 
-### 3. Configure
+That's it for browser downloads. Open **Settings** (gear icon) to pick a folder
+name, formats, and concurrency.
 
-Open the extension's **Settings** (gear icon) and enter your Meshy username —
-that's how it looks up who you follow. Everything else has working defaults.
+### Optional: the local bridge
+
+Use this when you want files somewhere other than your Downloads folder, or you
+are archiving hundreds of gigabytes.
+
+```bash
+cd bridge
+npm install
+cp .env.example .env      # optional; the folder is also settable from Settings
+npm start
+```
+
+Then in **Settings**, choose **Local bridge**, confirm the URL, and set the
+storage folder — the **Apply folder to bridge** button configures the running
+server for you, so there is no config file to hand-edit.
+
+The bridge listens on `127.0.0.1` only and accepts connections from nothing but
+your own machine.
 
 ## Usage
 

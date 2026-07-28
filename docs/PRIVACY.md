@@ -59,8 +59,9 @@ extension. Uninstalling clears all extension storage.
 | `webRequest` + `api.meshy.ai` host access | Read the session token from Meshy's own API calls. Requests are observed, never modified or blocked. |
 | `www.meshy.ai` host access | Fallback session lookup, and refreshing a tab to obtain a fresh token. |
 | `assets.meshy.ai` host access | Fetch the model files. |
-| `localhost` host access | Talk to the bridge you run. |
-| `storage` | Remember your settings. |
+| `downloads` | Save models to your Downloads folder in the default destination mode. Only files you asked to archive are downloaded. |
+| `localhost` host access | Talk to the bridge you run, if you choose that destination. |
+| `storage` | Remember your settings, and which files were already downloaded so re-runs can skip them. |
 | `tabs` | Find or open a Meshy tab so the session can refresh. |
 | `alarms` | Periodically refresh the session during a long run. |
 

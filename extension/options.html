@@ -10,6 +10,19 @@
     .saved.show { opacity: 1; }
     .footer-note { font-size: 11.5px; color: var(--muted); margin-top: 18px; line-height: 1.6; }
     a { color: var(--accent); }
+    .sub {
+      margin: 4px 0 14px 24px; padding-left: 12px;
+      border-left: 1px solid var(--border);
+    }
+    .sub[hidden] { display: none; }
+    .check input[type="radio"] { width: 15px; height: 15px; accent-color: var(--accent); }
+    code {
+      font-family: Consolas, monospace; font-size: 11px;
+      background: var(--surface-2); padding: 1px 4px; border-radius: 3px;
+    }
+    .btn-row { margin-top: 8px; }
+    .hint.ok { color: var(--ok); }
+    .hint.err { color: var(--err); }
   </style>
   <title>Meshy Asset Vault — Settings</title>
 </head>
@@ -25,15 +38,46 @@
   </header>
 
   <section class="panel">
-    <h2 class="panel-title">Local bridge</h2>
-    <label class="field">
-      <span class="field-label">Bridge URL</span>
-      <input type="text" id="bridgeUrl" placeholder="http://localhost:19950" />
+    <h2 class="panel-title">Where files are saved</h2>
+
+    <label class="check">
+      <input type="radio" name="destination" id="destBrowser" value="browser" />
+      <span><strong>Browser downloads</strong> — no setup, works on any device</span>
     </label>
-    <p class="hint">
-      The bridge is a small server you run yourself. It receives signed download links
-      and writes the files to your own storage. Nothing is uploaded anywhere.
-    </p>
+    <div class="sub" id="browserOptions">
+      <label class="field">
+        <span class="field-label">Folder inside your Downloads directory</span>
+        <input type="text" id="downloadFolder" placeholder="MeshyAssetVault" />
+      </label>
+      <p class="hint">
+        Files are saved to your browser's download location, organised as
+        <code>&lt;folder&gt;/&lt;creator&gt;/&lt;format&gt;/</code>. To put them on another
+        drive, change your browser's download location in its settings — or use the
+        local bridge below.
+      </p>
+    </div>
+
+    <label class="check">
+      <input type="radio" name="destination" id="destBridge" value="bridge" />
+      <span><strong>Local bridge</strong> — any folder, drive, or network share</span>
+    </label>
+    <div class="sub" id="bridgeOptions">
+      <label class="field">
+        <span class="field-label">Bridge URL</span>
+        <input type="text" id="bridgeUrl" placeholder="http://localhost:19950" />
+      </label>
+      <label class="field">
+        <span class="field-label">Storage folder on the bridge machine</span>
+        <input type="text" id="storageDir" placeholder="e.g. D:\Meshy or /mnt/archive" />
+      </label>
+      <div class="btn-row">
+        <button id="applyStorage" class="button button--ghost">Apply folder to bridge</button>
+      </div>
+      <p class="hint" id="bridgeState">
+        The bridge is a small server you run yourself, so it can write anywhere you can —
+        including external drives and network shares. Best for very large archives.
+      </p>
+    </div>
   </section>
 
   <section class="panel">

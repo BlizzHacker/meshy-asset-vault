@@ -19,6 +19,8 @@ const ACTIVE_PHASES = new Set([
 ]);
 
 const SETTING_KEYS = {
+  destination: 'browser',
+  downloadFolder: 'MeshyAssetVault',
   includeFollowing: true,
   includeSubscribed: true,
   includeSelf: false,
@@ -90,18 +92,29 @@ async function refresh() {
   renderToken(reply.token);
 }
 
-async function checkBridge() {
-  const { bridgeUrl } = await chrome.storage.local.get({ bridgeUrl: SETTING_KEYS.bridgeUrl });
+async function checkDestination() {
+  const { destination, downloadFolder, bridgeUrl } = await chrome.storage.local.get({
+    destination: SETTING_KEYS.destination,
+    downloadFolder: SETTING_KEYS.downloadFolder,
+    bridgeUrl: SETTING_KEYS.bridgeUrl
+  });
+
+  // Browser downloads need nothing running, so there is nothing to fail.
+  if (destination !== 'bridge') {
+    return setBanner($('bridgeStatus'), $('bridgeText'), 'ok',
+      `Saving to Downloads / ${downloadFolder}`);
+  }
+
   const reply = await chrome.runtime
     .sendMessage({ type: 'CHECK_BRIDGE', bridgeUrl })
     .catch(() => null);
 
   if (reply?.online) {
     const free = reply.info?.freeSpace ? ` · ${reply.info.freeSpace} free` : '';
-    setBanner($('bridgeStatus'), $('bridgeText'), 'ok', `Local bridge connected${free}`);
+    setBanner($('bridgeStatus'), $('bridgeText'), 'ok', `Bridge connected${free}`);
   } else {
     setBanner($('bridgeStatus'), $('bridgeText'), 'error',
-      'Local bridge offline — start it to receive files');
+      'Bridge offline — start it, or switch to browser downloads in Settings');
   }
 }
 
@@ -197,7 +210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (message?.type === 'STATE') renderState(message.state);
   });
 
-  await Promise.all([refresh(), checkBridge()]);
+  await Promise.all([refresh(), checkDestination()]);
   setInterval(refresh, 2000);
-  setInterval(checkBridge, 10000);
+  setInterval(checkDestination, 10000);
 });

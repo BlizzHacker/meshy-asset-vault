@@ -21,8 +21,13 @@ import {
   signAssetUrl
 } from './lib/api.js';
 import * as tokenStore from './lib/token.js';
+import { createSink } from './lib/sink.js';
 
 const DEFAULTS = {
+  // 'browser' needs no install and works on any Chrome device.
+  // 'bridge' unlocks arbitrary destinations (external drives, NAS) via a local server.
+  destination: 'browser',
+  downloadFolder: 'MeshyAssetVault',
   bridgeUrl: 'http://localhost:19950',
   formats: ['glb'],
   includeAnimations: true,
@@ -202,16 +207,22 @@ async function resolveAll(models, config, signal) {
   let resolved = 0;
   let failed = 0;
   let clips = 0;
+  let delivered = 0;
 
   const flush = async () => {
     if (buffer.length === 0) return;
     const batch = buffer;
     buffer = [];
-    await bridge('/api/records', {
-      method: 'POST',
-      body: { author: config.author, authorUid: config.authorUid, records: batch },
-      bridgeUrl: config.bridgeUrl
+    const outcome = await config.sink.deliver(batch, {
+      author: config.author,
+      authorUid: config.authorUid,
+      bridgeUrl: config.bridgeUrl,
+      rootFolder: config.downloadFolder
     });
+    if (outcome) {
+      delivered += outcome.delivered ?? 0;
+      patch({ delivered });
+    }
   };
 
   const worker = async () => {
@@ -254,7 +265,7 @@ async function resolveAll(models, config, signal) {
     Array.from({ length: config.resolveConcurrency }, () => worker())
   );
   await flush();
-  return { resolved, failed, clips };
+  return { resolved, failed, clips, delivered };
 }
 
 // --------------------------------------------------------------- main flow
@@ -267,8 +278,19 @@ async function run(options) {
   try {
     patch({ ...blankState(), phase: 'authenticating', startedAt: Date.now() });
 
-    const health = await checkBridge(config.bridgeUrl);
-    if (!health.online) throw new Error(`Bridge offline at ${config.bridgeUrl}`);
+    const destination = options.destination ?? config.destination;
+    const sink = createSink(destination);
+    patch({ destination: sink.mode });
+
+    // Only the bridge destination depends on a server being up.
+    if (sink.needsBridge) {
+      const health = await checkBridge(config.bridgeUrl);
+      if (!health.online) {
+        throw new Error(
+          `Bridge offline at ${config.bridgeUrl}. Start it, or switch the destination to browser downloads.`
+        );
+      }
+    }
 
     const token = await tokenStore.waitForToken(90_000);
     if (!token) throw new Error('No Meshy session found. Sign in at meshy.ai and retry.');
@@ -305,6 +327,8 @@ async function run(options) {
         models,
         {
           ...config,
+          sink,
+          downloadFolder: options.downloadFolder ?? config.downloadFolder,
           formats: options.formats ?? config.formats,
           includeAnimations: options.includeAnimations ?? config.includeAnimations,
           author: source.username,
@@ -320,12 +344,15 @@ async function run(options) {
         clips: totals.clips + result.clips
       };
 
-      // Kick the bridge for this creator as soon as its URLs are in.
-      await bridge('/api/start-download', {
-        method: 'POST',
-        body: { author: source.username, workers: config.bridgeWorkers },
-        bridgeUrl: config.bridgeUrl
-      }).catch(() => {});
+      // Browser downloads have already landed by this point; the bridge fetches
+      // asynchronously, so it needs an explicit nudge per creator.
+      if (sink.needsBridge) {
+        await bridge('/api/start-download', {
+          method: 'POST',
+          body: { author: source.username, workers: config.bridgeWorkers },
+          bridgeUrl: config.bridgeUrl
+        }).catch(() => {});
+      }
     }
 
     patch({

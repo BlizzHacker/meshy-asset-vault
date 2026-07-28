@@ -74,7 +74,8 @@ follow, to local storage they control.
 | Permission | Justification |
 | --- | --- |
 | `webRequest` | Reads the Authorization header from requests the Meshy web app already sends to its own API, so the user does not have to extract a session token manually. Requests are observed only — never modified, redirected, or blocked. |
-| `storage` | Persists user preferences (chosen formats, sources, bridge address) locally. |
+| `downloads` | Saves the selected 3D model files to the user's Downloads folder. This is the default destination and requires no additional software. Only URLs the user explicitly chose to archive are downloaded. |
+| `storage` | Persists user preferences (chosen formats, sources, destination) and a record of which files were already downloaded, so repeat runs skip them. |
 | `tabs` | Locates an open meshy.ai tab, or opens one, so the web app can refresh its own session during a long run. |
 | `alarms` | Schedules periodic session refresh so multi-hour archives do not stall. |
 | Host: `*.meshy.ai` | Required to list the user's models and follows, and to download model files. |
@@ -109,11 +110,16 @@ https://github.com/BlizzHacker/meshy-asset-vault/blob/main/docs/PRIVACY.md
 
 ## Review notes
 
-Reviewers cannot exercise the download path without a Meshy account and the
-locally run bridge. Suggested note for the "testing instructions" field:
+Reviewers need a signed-in Meshy account to exercise the download path. No other
+software is required — the default destination is the browser's own download
+manager. Suggested note for the "testing instructions" field:
 
-> The extension requires (1) a signed-in meshy.ai account and (2) a local bridge
-> server from the open-source repo, started with `npm install && npm start` in
-> the `bridge/` directory. Without the bridge, the popup loads and reports
-> "Local bridge offline" — this is expected. Source:
+> Requires a signed-in meshy.ai account (free). Sign in at meshy.ai, open the
+> extension, enter any public creator handle under "Additional usernames" (for
+> example: PICKTURA), and click "Start archive". Files download to
+> Downloads/MeshyAssetVault/<creator>/glb/.
+>
+> The optional "Local bridge" destination is for users archiving to an external
+> drive or NAS; it is a Node.js server from the open-source repository and is not
+> needed to review the extension. Source:
 > https://github.com/BlizzHacker/meshy-asset-vault
