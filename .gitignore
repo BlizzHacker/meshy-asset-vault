@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Local configuration and secrets — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_*
+*_token
+*.token
+
+# Downloaded assets and run artifacts
+vault/
+downloads/
+*.glb
+*.fbx
+*.obj
+*.part
+_manifest/
+*.jsonl
+
+# Packaged builds
+dist/
+*.zip
+*.crx
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.log

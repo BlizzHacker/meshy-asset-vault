@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+  <style>
+    body { width: auto; max-width: 620px; max-height: none; margin: 0 auto; padding: 32px 24px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .saved { color: var(--ok); font-size: 12px; margin-left: 10px; opacity: 0; transition: opacity .2s; }
+    .saved.show { opacity: 1; }
+    .footer-note { font-size: 11.5px; color: var(--muted); margin-top: 18px; line-height: 1.6; }
+    a { color: var(--accent); }
+  </style>
+  <title>Meshy Asset Vault — Settings</title>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Meshy Asset Vault</h1>
+        <p class="tagline">Settings</p>
+      </div>
+    </div>
+  </header>
+
+  <section class="panel">
+    <h2 class="panel-title">Local bridge</h2>
+    <label class="field">
+      <span class="field-label">Bridge URL</span>
+      <input type="text" id="bridgeUrl" placeholder="http://localhost:19950" />
+    </label>
+    <p class="hint">
+      The bridge is a small server you run yourself. It receives signed download links
+      and writes the files to your own storage. Nothing is uploaded anywhere.
+    </p>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">Performance</h2>
+    <div class="row">
+      <label class="field">
+        <span class="field-label">Resolve concurrency</span>
+        <input type="number" id="resolveConcurrency" min="1" max="16" />
+      </label>
+      <label class="field">
+        <span class="field-label">Bridge download workers</span>
+        <input type="number" id="bridgeWorkers" min="1" max="16" />
+      </label>
+    </div>
+    <p class="hint">
+      Higher values finish sooner but put more load on Meshy. Please stay considerate —
+      6 and 4 are sensible defaults.
+    </p>
+  </section>
+
+  <footer class="actions">
+    <button id="save" class="button button--primary">Save settings</button>
+    <span id="saved" class="saved">Saved</span>
+  </footer>
+
+  <p class="footer-note">
+    This extension downloads models on your behalf using your own signed-in session.
+    Respect each model's license and the rights of its creator, and follow Meshy's
+    Terms of Service. See the bundled privacy policy for exactly what is stored.
+  </p>
+
+  <script src="options.js"></script>
+</body>
+</html>

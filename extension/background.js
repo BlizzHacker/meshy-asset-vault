@@ -1,0 +1,390 @@
+/**
+ * Meshy Asset Vault — background orchestrator.
+ *
+ * Pipeline per creator:
+ *   1. enumerate published showcases        (public API)
+ *   2. sign a download URL per model/format (session token)
+ *   3. collect animation clips              (public API)
+ *   4. hand the signed URLs to the local bridge, which fetches the bytes
+ *
+ * Signed URLs stay valid long after the token that minted them expires, so a
+ * token rotation mid-run costs nothing: we wait for the next one and continue.
+ */
+
+import {
+  getMe,
+  listAnimationClips,
+  listFollowing,
+  listShowcases,
+  listSubscribed,
+  resolveUserId,
+  signAssetUrl
+} from './lib/api.js';
+import * as tokenStore from './lib/token.js';
+
+const DEFAULTS = {
+  bridgeUrl: 'http://localhost:19950',
+  formats: ['glb'],
+  includeAnimations: true,
+  resolveConcurrency: 6,
+  bridgeWorkers: 4,
+  batchSize: 100
+};
+
+const ALARM_KEEP_TOKEN_FRESH = 'meshy-vault-token-refresh';
+
+let job = null;      // active run, if any
+let aborter = null;  // AbortController for the active run
+
+// ---------------------------------------------------------------- run state
+
+function blankState() {
+  return {
+    phase: 'idle',
+    sources: [],
+    currentSource: null,
+    sourceIndex: 0,
+    sourceTotal: 0,
+    enumerated: 0,
+    models: 0,
+    resolved: 0,
+    failed: 0,
+    clips: 0,
+    error: '',
+    startedAt: 0,
+    finishedAt: 0
+  };
+}
+
+let state = blankState();
+
+function patch(changes) {
+  state = { ...state, ...changes };
+  chrome.storage.local.set({ runState: state }).catch(() => {});
+  chrome.runtime.sendMessage({ type: 'STATE', state }).catch(() => {});
+}
+
+async function settings() {
+  const stored = await chrome.storage.local.get(DEFAULTS);
+  return { ...DEFAULTS, ...stored };
+}
+
+// ------------------------------------------------------------------ bridge
+
+async function bridge(path, { method = 'GET', body, bridgeUrl } = {}) {
+  const base = bridgeUrl ?? (await settings()).bridgeUrl;
+  const resp = await fetch(`${base}${path}`, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(30_000)
+  });
+  if (!resp.ok) throw new Error(`Bridge ${path} → HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function checkBridge(bridgeUrl) {
+  try {
+    return { online: true, info: await bridge('/health', { bridgeUrl }) };
+  } catch (err) {
+    return { online: false, error: err.message };
+  }
+}
+
+// ------------------------------------------------------------- source build
+
+/** Expand the user's chosen scopes into a concrete list of creators. */
+async function buildSources(options, token, signal) {
+  const sources = new Map();
+  const add = (user, origin) => {
+    if (user?.id && !sources.has(user.id)) {
+      sources.set(user.id, { ...user, origin });
+    }
+  };
+
+  for (const username of options.usernames ?? []) {
+    add(await resolveUserId(username, token), 'manual');
+  }
+
+  if (options.includeFollowing || options.includeSubscribed || options.includeSelf) {
+    const me = await getMe(token);
+    if (options.includeSelf) add(me, 'self');
+    if (options.includeFollowing) {
+      for (const user of await listFollowing(me.id, token, signal)) add(user, 'following');
+    }
+    if (options.includeSubscribed) {
+      for (const user of await listSubscribed(me.id, token, signal)) add(user, 'subscribed');
+    }
+  }
+
+  return [...sources.values()];
+}
+
+// ----------------------------------------------------------------- resolve
+
+/** Resolve one model into zero or more downloadable records. */
+async function resolveModel(model, config, signal) {
+  const records = [];
+
+  for (const format of config.formats) {
+    try {
+      const url = await signAssetUrl(model.taskId, format, tokenStore.getToken(), { signal });
+      records.push({
+        id: model.taskId,
+        name: model.name,
+        format,
+        kind: 'model',
+        url,
+        license: model.license,
+        author: config.author,
+        authorUid: config.authorUid
+      });
+    } catch (err) {
+      if (err.status === 401 || err.status === 403) throw err; // handled upstream
+      // 400/404 here means "this model has no such format" — normal, not a failure.
+    }
+  }
+
+  // Animated models publish their clips separately from the static mesh.
+  if (config.includeAnimations && model.mode === 'animate') {
+    try {
+      for (const clip of await listAnimationClips(model.taskId, { signal })) {
+        records.push({
+          id: model.taskId,
+          name: `${model.name}__${clip.action}${clip.kind === 'armature' ? '_armature' : ''}`,
+          format: 'glb',
+          kind: 'animated',
+          url: clip.url,
+          license: model.license,
+          author: config.author,
+          authorUid: config.authorUid
+        });
+      }
+    } catch {
+      /* clip listing is best-effort */
+    }
+  }
+
+  return records;
+}
+
+/** Bounded-concurrency worker pool over the model list. */
+async function resolveAll(models, config, signal) {
+  let cursor = 0;
+  let buffer = [];
+  let resolved = 0;
+  let failed = 0;
+  let clips = 0;
+
+  const flush = async () => {
+    if (buffer.length === 0) return;
+    const batch = buffer;
+    buffer = [];
+    await bridge('/api/records', {
+      method: 'POST',
+      body: { author: config.author, authorUid: config.authorUid, records: batch },
+      bridgeUrl: config.bridgeUrl
+    });
+  };
+
+  const worker = async () => {
+    while (!signal.aborted) {
+      const index = cursor++;
+      if (index >= models.length) break;
+
+      let records = null;
+      for (let attempt = 0; attempt < 30 && !signal.aborted; attempt++) {
+        try {
+          records = await resolveModel(models[index], config, signal);
+          break;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          if (err.status === 401 || err.status === 403) {
+            // Token rotated mid-flight. Wait for the next one and retry.
+            patch({ phase: 'waiting-for-token' });
+            await tokenStore.waitForToken(120_000);
+            if (state.phase === 'waiting-for-token') patch({ phase: 'resolving' });
+            continue;
+          }
+          break;
+        }
+      }
+
+      if (records?.length) {
+        resolved++;
+        clips += records.filter((r) => r.kind === 'animated').length;
+        buffer.push(...records);
+      } else {
+        failed++;
+      }
+
+      if (buffer.length >= config.batchSize) await flush();
+      if ((resolved + failed) % 10 === 0) patch({ resolved, failed, clips });
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: config.resolveConcurrency }, () => worker())
+  );
+  await flush();
+  return { resolved, failed, clips };
+}
+
+// --------------------------------------------------------------- main flow
+
+async function run(options) {
+  aborter = new AbortController();
+  const { signal } = aborter;
+  const config = await settings();
+
+  try {
+    patch({ ...blankState(), phase: 'authenticating', startedAt: Date.now() });
+
+    const health = await checkBridge(config.bridgeUrl);
+    if (!health.online) throw new Error(`Bridge offline at ${config.bridgeUrl}`);
+
+    const token = await tokenStore.waitForToken(90_000);
+    if (!token) throw new Error('No Meshy session found. Sign in at meshy.ai and retry.');
+
+    patch({ phase: 'listing-creators' });
+    const sources = await buildSources(options, token, signal);
+    if (sources.length === 0) throw new Error('No creators selected.');
+
+    patch({
+      sources: sources.map((s) => s.username),
+      sourceTotal: sources.length,
+      phase: 'enumerating'
+    });
+
+    let totals = { resolved: 0, failed: 0, clips: 0, models: 0 };
+
+    for (const [index, source] of sources.entries()) {
+      if (signal.aborted) break;
+      patch({
+        currentSource: source.username,
+        sourceIndex: index + 1,
+        phase: 'enumerating',
+        enumerated: 0
+      });
+
+      const models = await listShowcases(source.id, {
+        signal,
+        onProgress: (n) => patch({ enumerated: n })
+      });
+
+      patch({ phase: 'resolving', models: models.length, resolved: 0, failed: 0 });
+
+      const result = await resolveAll(
+        models,
+        {
+          ...config,
+          formats: options.formats ?? config.formats,
+          includeAnimations: options.includeAnimations ?? config.includeAnimations,
+          author: source.username,
+          authorUid: source.id
+        },
+        signal
+      );
+
+      totals = {
+        models: totals.models + models.length,
+        resolved: totals.resolved + result.resolved,
+        failed: totals.failed + result.failed,
+        clips: totals.clips + result.clips
+      };
+
+      // Kick the bridge for this creator as soon as its URLs are in.
+      await bridge('/api/start-download', {
+        method: 'POST',
+        body: { author: source.username, workers: config.bridgeWorkers },
+        bridgeUrl: config.bridgeUrl
+      }).catch(() => {});
+    }
+
+    patch({
+      phase: signal.aborted ? 'stopped' : 'done',
+      models: totals.models,
+      resolved: totals.resolved,
+      failed: totals.failed,
+      clips: totals.clips,
+      finishedAt: Date.now()
+    });
+  } catch (err) {
+    patch({ phase: 'error', error: err.message, finishedAt: Date.now() });
+  } finally {
+    job = null;
+    aborter = null;
+  }
+}
+
+// ------------------------------------------------------------------ wiring
+
+tokenStore.installCapture();
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(ALARM_KEEP_TOKEN_FRESH, { periodInMinutes: 4 });
+});
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create(ALARM_KEEP_TOKEN_FRESH, { periodInMinutes: 4 });
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name !== ALARM_KEEP_TOKEN_FRESH) return;
+  // Only churn a tab while a run actually needs credentials.
+  const busy = job !== null;
+  if (busy && tokenStore.isStale()) tokenStore.primeToken({ allowOpen: true }).catch(() => {});
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  (async () => {
+    switch (message?.type) {
+      case 'TOKEN_HINT':
+        // Content-script fallback for environments where webRequest is unavailable.
+        tokenStore.setToken(message.token);
+        return sendResponse({ ok: true });
+
+      case 'GET_STATE':
+        return sendResponse({
+          state,
+          token: tokenStore.status(),
+          running: job !== null
+        });
+
+      case 'CHECK_BRIDGE':
+        return sendResponse(await checkBridge(message.bridgeUrl));
+
+      case 'PRIME_TOKEN':
+        await tokenStore.primeToken({ allowOpen: true }).catch(() => {});
+        return sendResponse({ ok: true, token: tokenStore.status() });
+
+      case 'LIST_CREATORS': {
+        try {
+          const token = await tokenStore.waitForToken(60_000);
+          if (!token) throw new Error('No Meshy session found.');
+          const me = await getMe(token);
+          const [following, subscribed] = await Promise.all([
+            listFollowing(me.id, token),
+            listSubscribed(me.id, token).catch(() => [])
+          ]);
+          return sendResponse({ ok: true, me, following, subscribed });
+        } catch (err) {
+          return sendResponse({ ok: false, error: err.message });
+        }
+      }
+
+      case 'START':
+        if (job) return sendResponse({ ok: false, error: 'A run is already active.' });
+        job = run(message.options ?? {});
+        return sendResponse({ ok: true });
+
+      case 'STOP':
+        aborter?.abort();
+        patch({ phase: 'stopping' });
+        return sendResponse({ ok: true });
+
+      default:
+        return sendResponse({ ok: false, error: 'Unknown message' });
+    }
+  })();
+  return true; // async response
+});

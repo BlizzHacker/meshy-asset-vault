@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+  <title>Meshy Asset Vault</title>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div>
+        <h1>Meshy Asset Vault</h1>
+        <p class="tagline">Bulk model archiver</p>
+      </div>
+    </div>
+    <button id="openOptions" class="icon-button" title="Settings" aria-label="Settings">&#9881;</button>
+  </header>
+
+  <div id="bridgeStatus" class="banner banner--pending" role="status">
+    <span class="dot" aria-hidden="true"></span><span id="bridgeText">Checking local bridge…</span>
+  </div>
+  <div id="tokenStatus" class="banner banner--pending" role="status">
+    <span class="dot" aria-hidden="true"></span><span id="tokenText">Waiting for Meshy session…</span>
+  </div>
+
+  <section class="panel">
+    <h2 class="panel-title">Sources</h2>
+    <label class="check">
+      <input type="checkbox" id="includeFollowing" checked />
+      <span>Creators I follow</span>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="includeSubscribed" checked />
+      <span>Creators I subscribe to</span>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="includeSelf" />
+      <span>My own published models</span>
+    </label>
+
+    <label class="field">
+      <span class="field-label">Additional usernames</span>
+      <input type="text" id="usernames" placeholder="PICKTURA, someoneelse" />
+    </label>
+
+    <button id="preview" class="button button--ghost">Preview creator list</button>
+    <div id="creatorList" class="creator-list" hidden></div>
+  </section>
+
+  <section class="panel">
+    <h2 class="panel-title">Formats</h2>
+    <div class="chip-row">
+      <label class="chip"><input type="checkbox" value="glb" checked /><span>GLB</span></label>
+      <label class="chip"><input type="checkbox" value="fbx" /><span>FBX</span></label>
+      <label class="chip"><input type="checkbox" value="obj" /><span>OBJ</span></label>
+    </div>
+    <label class="check">
+      <input type="checkbox" id="includeAnimations" checked />
+      <span>Rigged animation clips (GLB)</span>
+    </label>
+    <p class="hint">FBX and OBJ are converted on demand and download far slower than GLB.</p>
+  </section>
+
+  <section class="panel">
+    <div class="progress-head">
+      <h2 class="panel-title">Progress</h2>
+      <span id="phase" class="phase">idle</span>
+    </div>
+    <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+    <p id="sourceLine" class="source-line">No run in progress</p>
+    <div class="stats">
+      <div class="stat"><span class="stat-key">Models</span><span id="statModels" class="stat-value">0</span></div>
+      <div class="stat"><span class="stat-key">Resolved</span><span id="statResolved" class="stat-value">0</span></div>
+      <div class="stat"><span class="stat-key">Clips</span><span id="statClips" class="stat-value">0</span></div>
+      <div class="stat"><span class="stat-key">Skipped</span><span id="statFailed" class="stat-value">0</span></div>
+    </div>
+  </section>
+
+  <footer class="actions">
+    <button id="start" class="button button--primary">Start archive</button>
+    <button id="stop" class="button button--danger" disabled>Stop</button>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

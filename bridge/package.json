@@ -1,0 +1,19 @@
+{
+  "name": "meshy-asset-vault-bridge",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local bridge that receives signed download URLs from the Meshy Asset Vault extension and writes files to your own storage.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
