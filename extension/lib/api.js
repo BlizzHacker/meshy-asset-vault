@@ -154,7 +154,8 @@ export async function listShowcases(userId, { signal, onProgress } = {}) {
             showcaseId: row.id,
             // asset-url is keyed on the underlying task id, NOT the showcase id.
             taskId: row.resultId ?? row.id,
-            name: row.name ?? 'untitled',
+            // Names are frequently blank; `??` would let an empty string through.
+            name: row.name?.trim() || 'untitled',
             license: row.license ?? 'unknown',
             mode: row.mode ?? '',
             animationId: row.animationId ?? '',

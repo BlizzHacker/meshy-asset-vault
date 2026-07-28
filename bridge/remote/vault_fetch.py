@@ -39,7 +39,10 @@ counts = {"downloaded": 0, "skipped": 0, "failed": 0, "bytes": 0}
 
 def safe(value: str, limit: int = 80) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._ -]", "", str(value or "")).strip().replace(" ", "_")
-    return cleaned[:limit] or "unnamed"
+    # Blank source names leave separator runs behind (e.g. "__Walking"); collapse
+    # them so filenames stay readable when a creator leaves models untitled.
+    cleaned = re.sub(r"_{2,}", "_", cleaned).strip("_-.")
+    return cleaned[:limit] or "untitled"
 
 
 def intact(path: Path, ext: str) -> bool:

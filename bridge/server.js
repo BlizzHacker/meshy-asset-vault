@@ -173,7 +173,9 @@ async function startRemoteFetch(author, workers) {
   // `flock -c "... &"` would release the lock the instant the shell backgrounds
   // the job, so it guards nothing. Guard on the worker's own process signature
   // instead: one fetch per author, and re-running is safe anyway (it resumes).
-  const signature = `vault_fetch.py ${REMOTE_DIR} ${safeAuthor}`;
+  // Bracket the first character so the pattern cannot match the very shell that
+  // is evaluating it — otherwise pgrep always finds "itself" and never starts.
+  const signature = `[v]ault_fetch\\.py ${REMOTE_DIR} ${safeAuthor}`;
   const command =
     `mkdir -p ${shellQuote(logDir)}; ` +
     `if pgrep -f ${shellQuote(signature)} > /dev/null; then echo already-running; else ` +
