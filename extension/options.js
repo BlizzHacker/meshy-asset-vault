@@ -31,7 +31,11 @@ function setBridgeState(message, tone = '') {
   el.textContent = message;
 }
 
-/** Ask the bridge where it is currently writing, so the field reflects reality. */
+/**
+ * Ask the bridge where it is currently writing, so the field reflects reality.
+ * A bridge in remote mode owns its own destination, so present that as
+ * read-only rather than offering an edit that is guaranteed to fail.
+ */
 async function loadBridgeConfig() {
   const url = $('bridgeUrl').value.trim().replace(/\/$/, '');
   if (!url) return;
@@ -39,9 +43,22 @@ async function loadBridgeConfig() {
     const resp = await fetch(`${url}/api/config`, { signal: AbortSignal.timeout(5000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    if (data.storageDir && !$('storageDir').value) $('storageDir').value = data.storageDir;
-    setBridgeState(`Bridge reachable · currently writing to ${data.storageDir}`, 'ok');
+
+    if (data.storageDir) $('storageDir').value = data.storageDir;
+    const editable = data.editable !== false;
+    $('storageDir').disabled = !editable;
+    $('applyStorage').disabled = !editable;
+
+    setBridgeState(
+      editable
+        ? `Bridge reachable · writing to ${data.storageDir}`
+        : `Bridge is in remote mode and manages its own destination (${data.storageDir}). ` +
+          `Change REMOTE_DIR in the bridge's .env to move it.`,
+      'ok'
+    );
   } catch {
+    $('storageDir').disabled = false;
+    $('applyStorage').disabled = false;
     setBridgeState('Bridge not reachable. Start it, or use browser downloads instead.', 'err');
   }
 }

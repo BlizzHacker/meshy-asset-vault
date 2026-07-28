@@ -93,6 +93,9 @@ input[type="text"], input[type="number"], select {
   font: inherit; font-size: 12px; outline: none;
 }
 input[type="text"]:focus, input[type="number"]:focus, select:focus { border-color: var(--accent); }
+input:disabled, select:disabled {
+  opacity: 0.55; cursor: not-allowed; color: var(--muted);
+}
 
 .chip-row { display: flex; gap: 6px; margin-bottom: 8px; }
 .chip {
