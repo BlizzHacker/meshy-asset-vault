@@ -187,6 +187,24 @@ async function startRemoteFetch(author, workers) {
   return (await ssh([command])).trim();
 }
 
+/**
+ * Re-arm the remote fetcher shortly after records land. Debounced so a burst of
+ * batches results in one launch, and harmless if a worker is already running —
+ * the guard reports "already-running" and the next batch re-arms it again.
+ */
+const remoteDrainTimers = new Map();
+
+function scheduleRemoteDrain(author, delayMs = 4000) {
+  clearTimeout(remoteDrainTimers.get(author));
+  remoteDrainTimers.set(
+    author,
+    setTimeout(() => {
+      remoteDrainTimers.delete(author);
+      startRemoteFetch(author, DEFAULT_WORKERS).catch(() => {});
+    }, delayMs)
+  );
+}
+
 /** Drain one author's queue with a bounded worker pool. */
 async function drain(author, workers) {
   const queue = queues.get(author);
@@ -282,6 +300,10 @@ app.post('/api/records', async (req, res) => {
     if (isRemote()) {
       await appendManifestRemote(author, valid);
       stats.received += valid.length;
+      // The remote worker exits once it drains the records it loaded, so newly
+      // arrived ones would sit idle until something kicked it. Re-arm it here,
+      // debounced, so a long resolve keeps feeding a live fetcher.
+      scheduleRemoteDrain(author);
       return res.json({ ok: true, accepted: valid.length, mode: 'remote' });
     }
 

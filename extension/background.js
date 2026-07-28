@@ -18,7 +18,8 @@ import {
   listShowcases,
   listSubscribed,
   resolveUserId,
-  signAssetUrl
+  signAssetUrl,
+  sleep
 } from './lib/api.js';
 import * as tokenStore from './lib/token.js';
 import { createSink } from './lib/sink.js';
@@ -209,19 +210,38 @@ async function resolveAll(models, config, signal) {
   let clips = 0;
   let delivered = 0;
 
+  /**
+   * Hand a batch to the sink. A transient delivery failure (bridge restarting,
+   * a blip) must not discard hours of resolved work, so retry with backoff and
+   * put the batch back if it still will not go through.
+   */
   const flush = async () => {
     if (buffer.length === 0) return;
     const batch = buffer;
     buffer = [];
-    const outcome = await config.sink.deliver(batch, {
-      author: config.author,
-      authorUid: config.authorUid,
-      bridgeUrl: config.bridgeUrl,
-      rootFolder: config.downloadFolder
-    });
-    if (outcome) {
-      delivered += outcome.delivered ?? 0;
-      patch({ delivered });
+
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const outcome = await config.sink.deliver(batch, {
+          author: config.author,
+          authorUid: config.authorUid,
+          bridgeUrl: config.bridgeUrl,
+          rootFolder: config.downloadFolder
+        });
+        if (outcome) {
+          delivered += outcome.delivered ?? 0;
+          patch({ delivered });
+        }
+        return;
+      } catch (err) {
+        if (signal.aborted) return;
+        if (attempt === 3) {
+          buffer.unshift(...batch); // retry with the next flush rather than lose it
+          patch({ error: `Delivery failing: ${err.message}` });
+          return;
+        }
+        await sleep(2000 * (attempt + 1));
+      }
     }
   };
 
