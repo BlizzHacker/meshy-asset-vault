@@ -114,11 +114,19 @@ async function buildSources(options, token, signal) {
       for (const user of await listFollowing(me.id, token, signal)) add(user, 'following');
     }
     if (options.includeSubscribed) {
-      for (const user of await listSubscribed(me.id, token, signal)) add(user, 'subscribed');
+      // Subscriptions are a secondary source; never let them sink a whole run.
+      try {
+        for (const user of await listSubscribed(me.id, token, signal)) add(user, 'subscribed');
+      } catch {
+        /* endpoint unavailable for this account */
+      }
     }
   }
 
-  return [...sources.values()];
+  const all = [...sources.values()];
+  // `maxCreators` supports staged archives and low-risk trial runs.
+  const cap = Number(options.maxCreators);
+  return Number.isFinite(cap) && cap > 0 ? all.slice(0, cap) : all;
 }
 
 // ----------------------------------------------------------------- resolve
