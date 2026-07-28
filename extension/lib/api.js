@@ -71,8 +71,15 @@ export async function getMe(token) {
  * Resolve a username to its stable user id. Requires a session token because
  * Meshy does not expose profile lookup publicly.
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function resolveUserId(username, token) {
   const clean = String(username).replace(/^@/, '').trim();
+
+  // A raw user id needs no lookup — and enumeration itself is public, so this
+  // path works even before a session token has been captured.
+  if (UUID_RE.test(clean)) return { id: clean, username: clean };
+
   const data = await request(
     `${API}/web/v1/users/${encodeURIComponent(clean)}/info?byUid=true`,
     { token }

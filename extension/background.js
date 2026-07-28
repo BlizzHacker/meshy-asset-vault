@@ -115,9 +115,15 @@ async function buildSources(options, token, signal) {
     }
   };
 
+  const unresolved = [];
   for (const username of options.usernames ?? []) {
-    add(await resolveUserId(username, token), 'manual');
+    try {
+      add(await resolveUserId(username, token), 'manual');
+    } catch {
+      unresolved.push(username); // one bad handle shouldn't sink the run
+    }
   }
+  if (unresolved.length) patch({ error: `Skipped unknown creators: ${unresolved.join(', ')}` });
 
   if (options.includeFollowing || options.includeSubscribed || options.includeSelf) {
     const me = await getMe(token);
