@@ -374,6 +374,20 @@ async function pollCommand() {
   }
 }
 
+// Alarms can only fire every ~30-60s, and a dormant worker makes that the floor.
+// The worker also wakes for Meshy's own request headers, so piggyback on that:
+// whenever a token is seen, opportunistically check for queued work.
+let lastOpportunisticPoll = 0;
+tokenStore.onChange(() => {
+  const now = Date.now();
+  if (now - lastOpportunisticPoll < 5000) return;
+  lastOpportunisticPoll = now;
+  pollCommand().catch(() => {});
+});
+
+// A cold start should never sit idle on queued work.
+pollCommand().catch(() => {});
+
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_POLL_COMMAND) {
     pollCommand().catch(() => {});

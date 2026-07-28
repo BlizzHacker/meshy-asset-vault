@@ -299,12 +299,18 @@ app.post('/api/command', (req, res) => {
   res.json({ ok: true, queued: pendingCommand });
 });
 
-// Consumed (and cleared) by the extension's poll.
+// Claimed (and cleared) by the extension's poll. Exactly one consumer wins.
 app.get('/api/command', (_req, res) => {
   const command = pendingCommand;
   pendingCommand = null;
   res.json({ ok: true, command });
 });
+
+// Read-only view for diagnostics — deliberately does NOT consume, so watching
+// the queue can never steal a command from the extension.
+app.get('/api/command/peek', (_req, res) =>
+  res.json({ ok: true, pending: pendingCommand })
+);
 
 app.get('/api/status', (req, res) => {
   const author = req.query.author;

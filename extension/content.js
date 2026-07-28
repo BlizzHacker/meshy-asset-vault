@@ -12,6 +12,15 @@
 (() => {
   'use strict';
 
+  // Presence beacon: marks the page so the installed version can be confirmed
+  // from the page itself. Writes an attribute and nothing else.
+  try {
+    document.documentElement.dataset.meshyAssetVault =
+      chrome.runtime.getManifest().version;
+  } catch {
+    /* not fatal */
+  }
+
   function readStoredSession() {
     const chunks = {};
     for (let i = 0; i < localStorage.length; i++) {
