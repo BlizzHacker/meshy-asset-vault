@@ -30,8 +30,35 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 GLTF_MAGIC = b"glTF"
+ZIP_MAGIC = b"PK\x03\x04"
 USER_AGENT = "MeshyAssetVault/2.0 (remote fetch worker)"
 MIN_BYTES = 256
+
+
+def unwrap_zip(path: Path, want_ext: str) -> bool:
+    """Meshy serves some models (notably stylized ones) as a ZIP containing the
+    mesh rather than the bare file. Replace the archive with the model inside.
+    Returns True if the file now holds the expected format."""
+    import zipfile
+
+    try:
+        with zipfile.ZipFile(path) as archive:
+            members = [
+                m for m in archive.namelist()
+                if m.lower().endswith(f".{want_ext}") and not m.endswith("/")
+            ]
+            if not members:
+                return False
+            # If several, take the largest — that is the mesh, not a LOD stub.
+            member = max(members, key=lambda m: archive.getinfo(m).file_size)
+            data = archive.read(member)
+    except (zipfile.BadZipFile, OSError):
+        return False
+
+    if want_ext == "glb" and not data.startswith(GLTF_MAGIC):
+        return False
+    path.write_bytes(data)
+    return True
 
 lock = threading.Lock()
 counts = {"downloaded": 0, "skipped": 0, "failed": 0, "bytes": 0}
@@ -86,8 +113,13 @@ def fetch(record: dict, root: Path) -> str:
                     size += len(chunk)
 
             if not intact(partial, ext):
-                partial.replace(target.with_suffix(target.suffix + ".bad"))
-                raise ValueError("failed validation")
+                # A ZIP-wrapped model is still a good asset; unwrap before failing.
+                with partial.open("rb") as fh:
+                    zipped = fh.read(4) == ZIP_MAGIC
+                if not (zipped and unwrap_zip(partial, ext) and intact(partial, ext)):
+                    partial.replace(target.with_suffix(target.suffix + ".bad"))
+                    raise ValueError("failed validation")
+                size = partial.stat().st_size
 
             partial.replace(target)
             with lock:

@@ -70,9 +70,21 @@ function destinationFor(record) {
   return path.join(activeStorageDir, author, bucket);
 }
 
+/**
+ * Some models are served as a ZIP wrapping the mesh. Trust the URL over the
+ * requested format, so a ZIP never lands on disk labelled `.glb`.
+ */
+function extensionFor(record) {
+  try {
+    if (new URL(record.url).pathname.toLowerCase().endsWith('.zip')) return 'zip';
+  } catch {
+    /* fall back to the declared format */
+  }
+  return record.kind === 'animated' ? 'glb' : record.format;
+}
+
 function filenameFor(record) {
-  const ext = record.kind === 'animated' ? 'glb' : record.format;
-  return `${record.id}__${safeSegment(record.name)}.${ext}`;
+  return `${record.id}__${safeSegment(record.name)}.${extensionFor(record)}`;
 }
 
 async function isIntact(file, format) {
@@ -97,7 +109,7 @@ async function fetchToDisk(record) {
   const dir = destinationFor(record);
   await fsp.mkdir(dir, { recursive: true });
   const target = path.join(dir, filenameFor(record));
-  const ext = record.kind === 'animated' ? 'glb' : record.format;
+  const ext = extensionFor(record);
 
   if (await isIntact(target, ext)) return { status: 'skipped', bytes: 0 };
 

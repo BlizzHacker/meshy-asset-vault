@@ -24,7 +24,20 @@ const safeSegment = (value, max = 80) => {
 };
 
 const bucketFor = (record) => (record.kind === 'animated' ? 'animated' : record.format);
-const extFor = (record) => (record.kind === 'animated' ? 'glb' : record.format);
+
+/**
+ * Meshy serves some models (stylized ones especially) as a ZIP containing the
+ * mesh. Naming those `.glb` produces a file nothing can open, so honour what the
+ * URL actually points at.
+ */
+function extFor(record) {
+  try {
+    if (new URL(record.url).pathname.toLowerCase().endsWith('.zip')) return 'zip';
+  } catch {
+    /* fall through to the declared format */
+  }
+  return record.kind === 'animated' ? 'glb' : record.format;
+}
 
 export function relativePathFor(record, { rootFolder, author }) {
   return [
