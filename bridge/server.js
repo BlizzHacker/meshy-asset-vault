@@ -280,6 +280,15 @@ app.post('/api/start-download', async (req, res) => {
  * command can do nothing the user could not do from the popup themselves.
  */
 let pendingCommand = null;
+let lastRunState = null;
+
+/** The extension mirrors its run state here so scripts can watch progress. */
+app.post('/api/state', (req, res) => {
+  lastRunState = { ...req.body, reportedAt: Date.now() };
+  res.json({ ok: true });
+});
+
+app.get('/api/state', (_req, res) => res.json({ ok: true, state: lastRunState }));
 
 app.post('/api/command', (req, res) => {
   const { action, options } = req.body ?? {};

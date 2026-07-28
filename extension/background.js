@@ -59,10 +59,22 @@ function blankState() {
 
 let state = blankState();
 
+let lastMirror = 0;
+
 function patch(changes) {
   state = { ...state, ...changes };
   chrome.storage.local.set({ runState: state }).catch(() => {});
   chrome.runtime.sendMessage({ type: 'STATE', state }).catch(() => {});
+
+  // Mirror to the bridge so scripted runs are observable. Throttled, except for
+  // terminal states which should surface immediately.
+  const terminal = ['done', 'error', 'stopped'].includes(state.phase);
+  const now = Date.now();
+  if (terminal || now - lastMirror > 3000) {
+    lastMirror = now;
+    bridge('/api/state', { method: 'POST', body: { ...state, token: tokenStore.status() } })
+      .catch(() => {});
+  }
 }
 
 async function settings() {
