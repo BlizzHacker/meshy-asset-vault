@@ -78,6 +78,25 @@ vault/
     └── _manifest/   records.jsonl
 ```
 
+## Scripted and scheduled runs
+
+The bridge accepts a queued command, which the extension picks up within about
+30 seconds. Useful for cron jobs or kicking off an archive without opening the
+popup:
+
+```bash
+curl -X POST http://localhost:19950/api/command \
+  -H 'Content-Type: application/json' \
+  -d '{"action":"start","options":{
+        "includeFollowing":true,
+        "includeSubscribed":true,
+        "includeAnimations":true,
+        "formats":["glb"]}}'
+```
+
+`{"action":"stop"}` halts a run the same way. The bridge binds to `127.0.0.1`
+only, and a queued command can do nothing you could not do from the popup.
+
 ## How authentication works
 
 Meshy's web app signs its API calls with a short-lived token that it rotates

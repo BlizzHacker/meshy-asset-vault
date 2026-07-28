@@ -32,6 +32,7 @@ const DEFAULTS = {
 };
 
 const ALARM_KEEP_TOKEN_FRESH = 'meshy-vault-token-refresh';
+const ALARM_POLL_COMMAND = 'meshy-vault-command-poll';
 
 let job = null;      // active run, if any
 let aborter = null;  // AbortController for the active run
@@ -321,18 +322,42 @@ async function run(options) {
 
 tokenStore.installCapture();
 
-chrome.runtime.onInstalled.addListener(() => {
+function installAlarms() {
   chrome.alarms.create(ALARM_KEEP_TOKEN_FRESH, { periodInMinutes: 4 });
-});
-chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create(ALARM_KEEP_TOKEN_FRESH, { periodInMinutes: 4 });
-});
+  chrome.alarms.create(ALARM_POLL_COMMAND, { periodInMinutes: 0.5 });
+}
+chrome.runtime.onInstalled.addListener(installAlarms);
+chrome.runtime.onStartup.addListener(installAlarms);
+
+/** Pick up a run queued on the bridge (scheduled or scripted archives). */
+async function pollCommand() {
+  let reply;
+  try {
+    reply = await bridge('/api/command');
+  } catch {
+    return; // bridge not running; nothing to do
+  }
+  const command = reply?.command;
+  if (!command) return;
+
+  if (command.action === 'start' && !job) {
+    job = run(command.options ?? {});
+  } else if (command.action === 'stop') {
+    aborter?.abort();
+    patch({ phase: 'stopping' });
+  }
+}
 
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM_POLL_COMMAND) {
+    pollCommand().catch(() => {});
+    return;
+  }
   if (alarm.name !== ALARM_KEEP_TOKEN_FRESH) return;
   // Only churn a tab while a run actually needs credentials.
-  const busy = job !== null;
-  if (busy && tokenStore.isStale()) tokenStore.primeToken({ allowOpen: true }).catch(() => {});
+  if (job !== null && tokenStore.isStale()) {
+    tokenStore.primeToken({ allowOpen: true }).catch(() => {});
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

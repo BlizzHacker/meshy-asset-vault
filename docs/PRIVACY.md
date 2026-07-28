@@ -34,6 +34,14 @@ choose to archive are passed to your local bridge so it can fetch and label them
 There are no other network destinations. No data is sent to the developer or to
 any third party. There is no telemetry, crash reporting, or usage tracking.
 
+## The local control channel
+
+The bridge can hold a queued command (start or stop an archive) that the
+extension polls for. This exists so runs can be scheduled or scripted. The
+bridge listens on `127.0.0.1` only, so nothing outside your machine can reach
+it, and a queued command can only do what you could already do from the popup.
+No credentials pass through this channel.
+
 ## What is stored on your device
 
 - Downloaded model files, in the storage directory you configure.

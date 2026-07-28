@@ -272,6 +272,31 @@ app.post('/api/start-download', async (req, res) => {
   res.json({ ok: true, draining: targets });
 });
 
+/**
+ * Local control channel.
+ *
+ * Lets you kick off a run without opening the popup — useful for scheduled or
+ * scripted archives. The bridge only ever listens on 127.0.0.1, and a queued
+ * command can do nothing the user could not do from the popup themselves.
+ */
+let pendingCommand = null;
+
+app.post('/api/command', (req, res) => {
+  const { action, options } = req.body ?? {};
+  if (action !== 'start' && action !== 'stop') {
+    return res.status(400).json({ error: 'action must be "start" or "stop"' });
+  }
+  pendingCommand = { action, options: options ?? {}, queuedAt: Date.now() };
+  res.json({ ok: true, queued: pendingCommand });
+});
+
+// Consumed (and cleared) by the extension's poll.
+app.get('/api/command', (_req, res) => {
+  const command = pendingCommand;
+  pendingCommand = null;
+  res.json({ ok: true, command });
+});
+
 app.get('/api/status', (req, res) => {
   const author = req.query.author;
   const summary = [...queues.entries()].map(([name, q]) => ({
