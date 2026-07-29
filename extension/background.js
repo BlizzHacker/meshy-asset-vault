@@ -12,6 +12,7 @@
  */
 
 import {
+  API,
   getMe,
   listAnimationClips,
   listFollowing,
