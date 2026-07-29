@@ -112,6 +112,63 @@ export async function checkBridge(bridgeUrl) {
 
 // ------------------------------------------------------------- source build
 
+
+const SHARE_LINK = /meshy\.ai\/s\/([A-Za-z0-9]+)/i;
+const MODEL_LINK = /meshy\.ai\/3d-models\/[^\s"']*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+const BARE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Turn share links, model URLs or bare task ids into archivable models.
+ * A /s/ link is a redirect, so the task id only appears once it is followed.
+ */
+async function resolveShareLinks(entries, signal) {
+  const models = [];
+  const seen = new Set();
+
+  for (const raw of entries) {
+    const entry = String(raw).trim();
+    if (!entry) continue;
+
+    let taskId = null;
+    const modelMatch = entry.match(MODEL_LINK);
+    if (modelMatch) {
+      taskId = modelMatch[1];
+    } else if (BARE_UUID.test(entry)) {
+      taskId = entry;
+    } else if (SHARE_LINK.test(entry)) {
+      try {
+        // Following the redirect exposes the canonical /3d-models/ URL.
+        const resp = await fetch(entry, { redirect: 'follow', signal });
+        const found = (resp.url || '').match(MODEL_LINK);
+        if (found) taskId = found[1];
+      } catch {
+        /* unreachable link: skipped below */
+      }
+    }
+    if (!taskId || seen.has(taskId)) continue;
+    seen.add(taskId);
+
+    // Metadata is public; a miss just means a plainer name in the manifest.
+    let name = `model_${taskId.slice(0, 8)}`;
+    let license = 'unknown';
+    let mode = '';
+    try {
+      const resp = await fetch(`${API}/web/public/v2/tasks/${taskId}`, { signal });
+      if (resp.ok) {
+        const body = await resp.json();
+        const result = body.result ?? body;
+        name = (result.name || '').trim() || name;
+        license = result.license || license;
+        mode = result.mode || '';
+      }
+    } catch {
+      /* keep the fallback metadata */
+    }
+    models.push({ showcaseId: taskId, taskId, name, license, mode, animationId: '' });
+  }
+  return models;
+}
+
 /** Expand the user's chosen scopes into a concrete list of creators. */
 async function buildSources(options, token, signal) {
   const sources = new Map();
@@ -123,6 +180,9 @@ async function buildSources(options, token, signal) {
 
   const unresolved = [];
   for (const username of options.usernames ?? []) {
+    // Links and bare ids identify one model, not a creator, and are archived
+    // separately -- enumerating a profile for them would find nothing.
+    if (SHARE_LINK.test(username) || MODEL_LINK.test(username) || BARE_UUID.test(username)) continue;
     try {
       add(await resolveUserId(username, token), 'manual');
     } catch {
@@ -317,17 +377,32 @@ async function run(options) {
 
     patch({ phase: 'listing-creators' });
     const sources = await buildSources(options, token, signal);
-    if (sources.length === 0) throw new Error('No creators selected.');
+
+    const linkEntries = (options.usernames ?? []).filter(
+      (u) => SHARE_LINK.test(u) || MODEL_LINK.test(u) || BARE_UUID.test(u)
+    );
+    const directModels = linkEntries.length
+      ? await resolveShareLinks(linkEntries, signal)
+      : [];
+
+    if (sources.length === 0 && directModels.length === 0) {
+      throw new Error('No creators or links selected.');
+    }
+
+    const directSource = directModels.length
+      ? { id: 'shared-links', username: 'shared-links', origin: 'link', models: directModels }
+      : null;
+    const allSources = directSource ? [...sources, directSource] : sources;
 
     patch({
-      sources: sources.map((s) => s.username),
-      sourceTotal: sources.length,
+      sources: allSources.map((s) => s.username),
+      sourceTotal: allSources.length,
       phase: 'enumerating'
     });
 
     let totals = { resolved: 0, failed: 0, clips: 0, models: 0 };
 
-    for (const [index, source] of sources.entries()) {
+    for (const [index, source] of allSources.entries()) {
       if (signal.aborted) break;
       patch({
         currentSource: source.username,
@@ -336,10 +411,13 @@ async function run(options) {
         enumerated: 0
       });
 
-      const models = await listShowcases(source.id, {
-        signal,
-        onProgress: (n) => patch({ enumerated: n })
-      });
+      const models = source.models
+        ? source.models
+        : await listShowcases(source.id, {
+            signal,
+            onProgress: (n) => patch({ enumerated: n })
+          });
+      if (source.models) patch({ enumerated: models.length });
 
       patch({ phase: 'resolving', models: models.length, resolved: 0, failed: 0 });
 
@@ -426,6 +504,12 @@ async function pollCommand() {
 // whenever a token is seen, opportunistically check for queued work.
 let lastOpportunisticPoll = 0;
 tokenStore.onChange(() => {
+  // Relay the freshly captured token to the bridge. This used to run only from
+  // the localStorage fallback, which never fires against a cookie session, so
+  // the host copy went stale and server-side tooling could not authenticate.
+  const token = tokenStore.getToken();
+  if (token) pushTokenToBridge(token);
+
   const now = Date.now();
   if (now - lastOpportunisticPoll < 5000) return;
   lastOpportunisticPoll = now;
