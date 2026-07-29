@@ -48,7 +48,22 @@ const GLTF_MAGIC = Buffer.from('glTF');
 const USER_AGENT = 'MeshyAssetVault/2.0 (+https://github.com/)';
 
 const app = express();
-app.use(cors({ origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGIN.test(origin)) }));
+// Chrome's Private Network Access check: a secure context (the extension's
+// service worker) may only call a loopback address if the preflight is answered
+// with this header. Without it every request from the worker fails silently,
+// which looks exactly like the extension being asleep.
+app.use((req, res, next) => {
+  if (req.headers['access-control-request-private-network']) {
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  }
+  next();
+});
+
+app.use(cors({
+  origin: (origin, cb) => cb(null, !origin || ALLOWED_ORIGIN.test(origin)),
+  allowedHeaders: ['Content-Type'],
+  maxAge: 600
+}));
 app.use(express.json({ limit: '64mb' }));
 
 /** Per-author download queues, so several creators can be in flight at once. */
