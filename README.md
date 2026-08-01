@@ -1,8 +1,5 @@
 # Meshy Asset Vault
 
-A project of the [Move Weight Foundation](https://foundation.moveweight.com), an
-Oklahoma non-profit corporation with 501(c)(3) status pending.
-
 Bulk-archive your [Meshy](https://www.meshy.ai) 3D models — and the creators you
 follow — to storage you actually control.
 
