@@ -19,8 +19,8 @@ Extension (your browser session)          Bridge (your machine)
 - **Whole-library archiving** — every published model for any creator, not just
   the first page.
 - **Follows and subscriptions** — archive everyone you follow in one run.
-- **Rigged animations** — pulls each animation clip and its armature as separate
-  GLB files, not just the static mesh.
+- **Rigged animations** — prefers animation clips and armatures as GLB files;
+  static GLB is used when no clips are available. You can also keep both.
 - **GLB / FBX / OBJ** — request any combination.
 - **Hands-off authentication** — reads the session your browser already has. No
   API keys, no DevTools, no copying tokens.
@@ -39,9 +39,8 @@ Two destinations, chosen in **Settings**:
 | Works on | Any Chrome device, including Chromebooks | Machines where you can run Node |
 | Best for | Most people | Very large archives, NAS, external drives |
 
-Browser mode organises files as
-`Downloads/<your folder>/<creator>/<format>/` and skips anything it has already
-fetched, so re-running only picks up what is new.
+Browser mode defaults to `Downloads/MeshyAssetVault/<creator>/<format>/` and
+skips anything it has already fetched, so re-running only picks up what is new.
 
 ## Requirements
 
@@ -81,8 +80,8 @@ your own machine.
 
 1. Sign in at [meshy.ai](https://www.meshy.ai) and leave a tab open.
 2. Click the Asset Vault icon.
-3. Choose sources (follows, subscriptions, your own models, or specific
-   usernames) and formats.
+3. Choose sources (follows, subscriptions, your own models, usernames, or
+   Meshy profile links) and formats.
 4. **Start archive**.
 
 Files land under your storage directory, organised per creator:
@@ -144,7 +143,7 @@ infrastructure. Use this on accounts you have legitimate access to, and follow
 | Symptom | Fix |
 | --- | --- |
 | "Local bridge offline" | Start it: `cd bridge && npm start` |
-| "No Meshy session yet" | Open meshy.ai in a tab and make sure you're signed in |
+| "No Meshy session yet" | Open meshy.ai while signed in and click **Reconnect Meshy session** |
 | Run pauses on "waiting for session" | Normal — a token rotated; it resumes on its own |
 | FBX/OBJ crawl compared to GLB | Expected. Meshy converts those on demand, server-side |
 | A few models are skipped | Not every model publishes every format; check the manifest |

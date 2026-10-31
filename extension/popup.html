@@ -23,6 +23,7 @@
   <div id="tokenStatus" class="banner banner--pending" role="status">
     <span class="dot" aria-hidden="true"></span><span id="tokenText">Waiting for Meshy session…</span>
   </div>
+  <button id="primeSession" class="button button--ghost">Reconnect Meshy session</button>
 
   <section class="panel">
     <h2 class="panel-title">Sources</h2>
@@ -41,7 +42,7 @@
 
     <label class="field">
       <span class="field-label">Additional usernames</span>
-      <input type="text" id="usernames" placeholder="PICKTURA, someoneelse" />
+      <input type="text" id="usernames" placeholder="username, @username, or Meshy profile URL" />
     </label>
 
     <button id="preview" class="button button--ghost">Preview creator list</button>
@@ -59,7 +60,11 @@
       <input type="checkbox" id="includeAnimations" checked />
       <span>Rigged animation clips (GLB)</span>
     </label>
-    <p class="hint">FBX and OBJ are converted on demand and download far slower than GLB.</p>
+    <label class="check">
+      <input type="checkbox" id="includeStaticForAnimated" />
+      <span>Also download static GLB when clips exist</span>
+    </label>
+    <p class="hint">By default, animated models use their rigged GLB clips; other models use the static GLB. FBX and OBJ are converted on demand and download far slower.</p>
   </section>
 
   <section class="panel">
