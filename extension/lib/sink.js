@@ -64,22 +64,37 @@ chrome.downloads.onChanged.addListener((delta) => {
 });
 
 /** Resolve on completion, including when a fast download finishes immediately. */
-function awaitDownload(downloadId) {
+function awaitDownload(downloadId, signal) {
   return new Promise((resolve) => {
     let settled = false;
+    let timer;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       downloadWaiters.delete(downloadId);
+      signal?.removeEventListener('abort', onAbort);
       resolve(result);
     };
+    const onAbort = () => {
+      finish({ ok: false, aborted: true });
+      try {
+        chrome.downloads.cancel(downloadId, () => {});
+      } catch {
+        /* the download may already be complete or interrupted */
+      }
+    };
 
-    const timer = setTimeout(
+    timer = setTimeout(
       () => finish({ ok: false, error: 'download status timed out' }),
       10 * 60 * 1000
     );
     downloadWaiters.set(downloadId, { finish });
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
 
     // The download can finish before its waiter is installed. Querying current
     // state closes that race while the module-level listener catches later events.
@@ -115,7 +130,7 @@ async function deliverViaBrowser(records, ctx) {
 
   let cursor = 0;
   const worker = async () => {
-    while (cursor < pending.length) {
+    while (cursor < pending.length && !ctx.signal?.aborted) {
       const record = pending[cursor++];
       try {
         const downloadId = await chrome.downloads.download({
@@ -124,7 +139,8 @@ async function deliverViaBrowser(records, ctx) {
           conflictAction: 'overwrite',
           saveAs: false
         });
-        const outcome = await awaitDownload(downloadId);
+        const outcome = await awaitDownload(downloadId, ctx.signal);
+        if (outcome.aborted) break;
         if (outcome.ok) {
           result.delivered++;
           seen.add(keyFor(record));
