@@ -305,7 +305,8 @@ async function resolveAll(models, config, signal) {
           author: config.author,
           authorUid: config.authorUid,
           bridgeUrl: config.bridgeUrl,
-          rootFolder: config.downloadFolder
+          rootFolder: config.downloadFolder,
+          signal
         });
         if (outcome) {
           delivered += outcome.delivered ?? 0;

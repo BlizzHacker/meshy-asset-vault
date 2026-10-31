@@ -80,13 +80,24 @@ export async function resolveUserId(username, token) {
   // path works even before a session token has been captured.
   if (UUID_RE.test(clean)) return { id: clean, username: clean };
 
-  const data = await request(
-    `${API}/web/v1/users/${encodeURIComponent(clean)}/info?byUid=true`,
-    { token }
-  );
-  const result = data.result ?? data;
-  if (!result?.id) throw new Error(`Could not resolve user "${clean}"`);
-  return { id: result.id, username: result.username ?? clean };
+  // Meshy profile URLs can contain either a UID-like slug or a username.
+  // Try both lookup modes so both forms resolve to the same stable account ID.
+  let lastError;
+  for (const byUid of [true, false]) {
+    try {
+      const data = await request(
+        `${API}/web/v1/users/${encodeURIComponent(clean)}/info?byUid=${byUid}`,
+        { token }
+      );
+      const result = data.result ?? data;
+      if (result?.id) return { id: result.id, username: result.username ?? clean };
+    } catch (err) {
+      if (err.status === 401 || err.status === 403) throw err;
+      lastError = err;
+    }
+  }
+  if (lastError && !lastError.status) throw lastError;
+  throw new Error(`Could not resolve user "${clean}"`);
 }
 
 /** Paginate an authenticated relationship list (following / subscribed). */
