@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Meshy Asset Vault",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Bulk-download your Meshy 3D models and creators you follow — GLB, FBX, OBJ and rigged animations — with a resumable local pipeline.",
   "minimum_chrome_version": "116",
   "permissions": [

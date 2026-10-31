@@ -31,7 +31,10 @@ function decodeExpiry(jwt) {
 export function setToken(rawValue) {
   if (!rawValue) return false;
   const value = rawValue.startsWith('Bearer ') ? rawValue : `Bearer ${rawValue}`;
-  if (!/^Bearer ey/.test(value)) return false;
+  const token = value.replace(/^Bearer\s+/i, '').trim();
+  // Do not assume Meshy will keep using JWTs forever. Unknown token formats
+  // remain usable; their expiry is simply treated as unknown.
+  if (token.length < 20 || !/^[A-Za-z0-9._~+/-]+=*$/.test(token)) return false;
   if (current?.value === value) return false;
 
   current = { value, expiresAt: decodeExpiry(value.slice(7)) };
@@ -55,8 +58,9 @@ export function clearToken() {
 
 export function status() {
   if (!current) return { present: false, secondsLeft: 0, expired: true };
+  if (!current.expiresAt) return { present: true, secondsLeft: null, expired: false };
   const secondsLeft = Math.max(0, Math.round((current.expiresAt - Date.now()) / 1000));
-  return { present: true, secondsLeft, expired: current.expiresAt > 0 && secondsLeft === 0 };
+  return { present: true, secondsLeft, expired: secondsLeft === 0 };
 }
 
 export function onChange(listener) {

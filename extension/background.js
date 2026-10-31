@@ -33,6 +33,7 @@ const DEFAULTS = {
   bridgeUrl: 'http://localhost:19950',
   formats: ['glb'],
   includeAnimations: true,
+  includeStaticForAnimated: false,
   resolveConcurrency: 6,
   bridgeWorkers: 4,
   batchSize: 100
@@ -118,6 +119,17 @@ const SHARE_LINK = /meshy\.ai\/s\/([A-Za-z0-9]+)/i;
 const MODEL_LINK = /meshy\.ai\/3d-models\/[^\s"']*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 const BARE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+function normalizeCreatorInput(value) {
+  const input = String(value ?? '').trim();
+  const profile = input.match(/^(?:https?:\/\/)?(?:www\.)?meshy\.ai\/@([^/?#]+)/i);
+  if (!profile) return input.replace(/^@/, '');
+  try {
+    return decodeURIComponent(profile[1]);
+  } catch {
+    return profile[1];
+  }
+}
+
 /**
  * Turn share links, model URLs or bare task ids into archivable models.
  * A /s/ link is a redirect, so the task id only appears once it is followed.
@@ -180,14 +192,15 @@ async function buildSources(options, token, signal) {
   };
 
   const unresolved = [];
-  for (const username of options.usernames ?? []) {
+  for (const rawInput of options.usernames ?? []) {
+    const username = normalizeCreatorInput(rawInput);
     // Links and bare ids identify one model, not a creator, and are archived
     // separately -- enumerating a profile for them would find nothing.
-    if (SHARE_LINK.test(username) || MODEL_LINK.test(username) || BARE_UUID.test(username)) continue;
+    if (SHARE_LINK.test(rawInput) || MODEL_LINK.test(rawInput) || BARE_UUID.test(rawInput)) continue;
     try {
       add(await resolveUserId(username, token), 'manual');
     } catch {
-      unresolved.push(username); // one bad handle shouldn't sink the run
+      unresolved.push(rawInput); // one bad handle shouldn't sink the run
     }
   }
   if (unresolved.length) patch({ error: `Skipped unknown creators: ${unresolved.join(', ')}` });
@@ -219,8 +232,20 @@ async function buildSources(options, token, signal) {
 /** Resolve one model into zero or more downloadable records. */
 async function resolveModel(model, config, signal) {
   const records = [];
+  let clips = [];
+
+  // Resolve clips before the static mesh so the preferred mode can avoid
+  // downloading a duplicate static GLB when a rigged clip is available.
+  if (config.includeAnimations && model.mode?.toLowerCase() === 'animate') {
+    try {
+      clips = await listAnimationClips(model.taskId, { signal });
+    } catch {
+      clips = [];
+    }
+  }
 
   for (const format of config.formats) {
+    if (format === 'glb' && clips.some((clip) => clip.kind === 'animation') && !config.includeStaticForAnimated) continue;
     try {
       const url = await signAssetUrl(model.taskId, format, tokenStore.getToken(), { signal });
       records.push({
@@ -239,24 +264,17 @@ async function resolveModel(model, config, signal) {
     }
   }
 
-  // Animated models publish their clips separately from the static mesh.
-  if (config.includeAnimations && model.mode === 'animate') {
-    try {
-      for (const clip of await listAnimationClips(model.taskId, { signal })) {
-        records.push({
-          id: model.taskId,
-          name: `${model.name}__${clip.action}${clip.kind === 'armature' ? '_armature' : ''}`,
-          format: 'glb',
-          kind: 'animated',
-          url: clip.url,
-          license: model.license,
-          author: config.author,
-          authorUid: config.authorUid
-        });
-      }
-    } catch {
-      /* clip listing is best-effort */
-    }
+  for (const clip of clips) {
+    records.push({
+      id: model.taskId,
+      name: model.name + '__' + clip.action + (clip.kind === 'armature' ? '_armature' : ''),
+      format: 'glb',
+      kind: 'animated',
+      url: clip.url,
+      license: model.license,
+      author: config.author,
+      authorUid: config.authorUid
+    });
   }
 
   return records;

@@ -52,20 +52,48 @@ const keyFor = (record) => `${record.id}|${record.format}|${record.kind}|${recor
 
 // ---------------------------------------------------------------- browser
 
-/** Resolve once Chrome reports the download finished (or failed). */
+// Register at module load so MV3 can wake the service worker for this event.
+const downloadWaiters = new Map();
+chrome.downloads.onChanged.addListener((delta) => {
+  const waiter = downloadWaiters.get(delta.id);
+  if (!waiter) return;
+  if (delta.state?.current === 'complete') waiter.finish({ ok: true });
+  else if (delta.state?.current === 'interrupted') {
+    waiter.finish({ ok: false, error: delta.error?.current ?? 'interrupted' });
+  }
+});
+
+/** Resolve on completion, including when a fast download finishes immediately. */
 function awaitDownload(downloadId) {
   return new Promise((resolve) => {
-    const onChanged = (delta) => {
-      if (delta.id !== downloadId) return;
-      if (delta.state?.current === 'complete') {
-        chrome.downloads.onChanged.removeListener(onChanged);
-        resolve({ ok: true });
-      } else if (delta.state?.current === 'interrupted') {
-        chrome.downloads.onChanged.removeListener(onChanged);
-        resolve({ ok: false, error: delta.error?.current ?? 'interrupted' });
-      }
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      downloadWaiters.delete(downloadId);
+      resolve(result);
     };
-    chrome.downloads.onChanged.addListener(onChanged);
+
+    const timer = setTimeout(
+      () => finish({ ok: false, error: 'download status timed out' }),
+      10 * 60 * 1000
+    );
+    downloadWaiters.set(downloadId, { finish });
+
+    // The download can finish before its waiter is installed. Querying current
+    // state closes that race while the module-level listener catches later events.
+    chrome.downloads.search({ id: downloadId }, (items) => {
+      if (chrome.runtime.lastError) {
+        finish({ ok: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      const item = items?.[0];
+      if (item?.state === 'complete') finish({ ok: true });
+      else if (item?.state === 'interrupted') {
+        finish({ ok: false, error: item.error ?? 'interrupted' });
+      }
+    });
   });
 }
 

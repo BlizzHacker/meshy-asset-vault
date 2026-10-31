@@ -25,6 +25,7 @@ const SETTING_KEYS = {
   includeSubscribed: true,
   includeSelf: false,
   includeAnimations: true,
+  includeStaticForAnimated: false,
   usernames: '',
   formats: ['glb'],
   bridgeUrl: 'http://localhost:19950'
@@ -42,14 +43,16 @@ function setBanner(el, textEl, tone, message) {
 function renderToken(token) {
   if (!token?.present) {
     return setBanner($('tokenStatus'), $('tokenText'), 'pending',
-      'No Meshy session yet — open meshy.ai while signed in.');
+      'Meshy session not captured — make sure a signed-in Meshy tab is open, then reconnect.');
   }
   if (token.expired) {
     return setBanner($('tokenStatus'), $('tokenText'), 'pending',
       'Session expired — refreshing automatically.');
   }
   const mins = Math.floor(token.secondsLeft / 60);
-  const label = mins >= 1 ? `${mins}m` : `${token.secondsLeft}s`;
+  const label = token.secondsLeft == null
+    ? 'expiry unknown'
+    : mins >= 1 ? mins + 'm' : token.secondsLeft + 's';
   setBanner($('tokenStatus'), $('tokenText'), 'ok', `Meshy session captured (${label} left)`);
 }
 
@@ -124,6 +127,7 @@ async function restoreSettings() {
   $('includeSubscribed').checked = stored.includeSubscribed;
   $('includeSelf').checked = stored.includeSelf;
   $('includeAnimations').checked = stored.includeAnimations;
+  $('includeStaticForAnimated').checked = stored.includeStaticForAnimated;
   $('usernames').value = stored.usernames;
   for (const input of document.querySelectorAll('.chip input')) {
     input.checked = stored.formats.includes(input.value);
@@ -137,6 +141,7 @@ function currentOptions(stored) {
     includeSubscribed: $('includeSubscribed').checked,
     includeSelf: $('includeSelf').checked,
     includeAnimations: $('includeAnimations').checked,
+    includeStaticForAnimated: $('includeStaticForAnimated').checked,
     formats: selectedFormats(),
     usernames: $('usernames').value.split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
   };
@@ -146,6 +151,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const stored = await restoreSettings();
 
   $('openOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
+
+  $('primeSession').addEventListener('click', async () => {
+    setBanner($('tokenStatus'), $('tokenText'), 'pending', 'Reconnecting to Meshy…');
+    await chrome.runtime.sendMessage({ type: 'PRIME_TOKEN' }).catch(() => null);
+    refresh();
+  });
 
   $('preview').addEventListener('click', async () => {
     const list = $('creatorList');
@@ -194,6 +205,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       includeSubscribed: options.includeSubscribed,
       includeSelf: options.includeSelf,
       includeAnimations: options.includeAnimations,
+      includeStaticForAnimated: options.includeStaticForAnimated,
       formats: options.formats,
       usernames: $('usernames').value
     });
